@@ -1,9 +1,10 @@
 package internal
 
 type Config struct {
-	Players []string `json:"players"`
-	LastFM  LastFM   `json:"lastfm"`
-	Discord Discord  `json:"discord"`
+	Players          []string `json:"players"`
+	MediaDirectories []string `json:"media_directories"`
+	LastFM           LastFM   `json:"lastfm"`
+	Discord          Discord  `json:"discord"`
 }
 
 type LastFM struct {
