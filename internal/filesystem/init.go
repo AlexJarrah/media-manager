@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func Initialize() error {
@@ -38,8 +39,15 @@ func Initialize() error {
 	}
 
 	// Get & write config to update file with new/missing fields & format JSON
+	homeDir, _ := os.UserHomeDir()
 	config, err := GetConfigFile()
-	if err == nil {
+	if err == nil && homeDir != "" {
+		for i, dir := range config.MediaDirectories {
+			if strings.HasPrefix(dir, "~") {
+				config.MediaDirectories[i] = filepath.Join(homeDir, strings.TrimPrefix(dir, "~"))
+			}
+		}
+
 		WriteConfigFile(config)
 	}
 
