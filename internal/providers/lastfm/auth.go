@@ -22,7 +22,6 @@ func Authenticate(config internal.LastFM) (sessionKey string, err error) {
 	if err != nil {
 		return "", err
 	}
-	fmt.Println("Response:", string(response))
 
 	// Parse the session key from the response
 	var sessionKeyResponse SessionKeyResponse
