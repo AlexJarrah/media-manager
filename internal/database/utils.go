@@ -1,6 +1,10 @@
 package database
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	_ "github.com/mattn/go-sqlite3"
+)
 
 // AddArtist adds a new artist to the database
 func (db *DB) AddArtist(artist *Artist) error {
