@@ -5,12 +5,17 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"gitlab.com/AlexJarrah/media-manager/internal/database"
 	"gitlab.com/AlexJarrah/media-manager/internal/filesystem"
 	"gitlab.com/AlexJarrah/media-manager/internal/monitor"
 )
 
 func main() {
 	if err := filesystem.Initialize(); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := database.Initialize(); err != nil {
 		log.Fatal(err)
 	}
 
