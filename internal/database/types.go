@@ -21,33 +21,33 @@ func NewDB(dbPath string) (*DB, error) {
 
 // Artist represents an artist in the database
 type Artist struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Bio      string `json:"bio"`
-	ImageURI string `json:"image_uri"`
+	ID       int64          `json:"id"`
+	Name     string         `json:"name"`
+	Bio      sql.NullString `json:"bio"`
+	ImageURI sql.NullString `json:"image_uri"`
 }
 
 // Album represents an album in the database
 type Album struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	ReleaseDate time.Time `json:"release_date"`
-	ImageURI    string    `json:"image_uri"`
-	Artists     []Artist  `json:"artists"`
+	ID          int64          `json:"id"`
+	Name        string         `json:"name"`
+	ReleaseDate sql.NullTime   `json:"release_date"`
+	ImageURI    sql.NullString `json:"image_uri"`
+	Artists     []Artist       `json:"artists"`
 }
 
 // Track represents a track in the database
 type Track struct {
-	ID         int64    `json:"id"`
-	AlbumID    int64    `json:"album_id"`
-	Name       string   `json:"name"`
-	Duration   int      `json:"duration"`
-	Lyrics     string   `json:"lyrics"`
-	IsExplicit bool     `json:"is_explicit"`
-	FilePath   string   `json:"file_path"`
-	SHA512Sum  string   `json:"sha512sum"`
-	Artists    []Artist `json:"artists"`
-	Tags       []Tag    `json:"tags"`
+	ID         int64          `json:"id"`
+	AlbumID    int64          `json:"album_id"`
+	Name       string         `json:"name"`
+	Duration   int            `json:"duration"`
+	Lyrics     sql.NullString `json:"lyrics"`
+	IsExplicit bool           `json:"is_explicit"`
+	FilePath   string         `json:"file_path"`
+	SHA256Sum  string         `json:"sha256sum"`
+	Artists    []Artist       `json:"artists"`
+	Tags       []Tag          `json:"tags"`
 }
 
 // User represents a user in the database

@@ -1,165 +1,156 @@
 package database
 
 import (
-	"crypto/sha512"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dhowden/tag"
 )
 
-// TrackFile represents a music file with its metadata
-type TrackFile struct {
-	FilePath   string
-	Name       string
-	Artist     string
-	Album      string
-	Duration   int
-	Lyrics     string
-	IsExplicit bool
-	SHA512Sum  string
-}
-
-// LoadTracksFromDirectory scans a directory for music files and loads their metadata
 func (db *DB) LoadTracksFromDirectory(dirPath string) error {
-	return filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+	supportedFormats := map[string]bool{
+		".mp3": true, ".m4a": true, ".m4b": true, ".m4p": true,
+		".alac": true, ".flac": true, ".ogg": true, ".dsf": true,
+	}
+
+	existingHashes := make(map[string]struct{})
+	existingTracks, _ := db.GetTracks("sha256sum", "")
+	for _, t := range existingTracks {
+		existingHashes[t.SHA256Sum] = struct{}{}
+	}
+
+	var (
+		tracks  []*Track
+		artists = make(map[string]*Artist)
+		albums  = make(map[string]*Album)
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+	)
+
+	// Determine the number of concurrent goroutines based on the number of CPU cores
+	numCPU := runtime.NumCPU()
+	sem := make(chan struct{}, numCPU)
+
+	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
 			return err
 		}
 
-		if info.IsDir() {
-			return nil
-		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
 
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".mp3" || ext == ".flac" || ext == ".m4a" || ext == ".wav" {
-			track, err := loadTrackFile(path)
+			ext := strings.ToLower(filepath.Ext(path))
+			if !supportedFormats[ext] {
+				return
+			}
+
+			track, artist, album, err := processFile(path, existingHashes)
 			if err != nil {
-				return err
+				return
 			}
 
-			// Check for .lrc file
-			lrcPath := strings.TrimSuffix(path, ext) + ".lrc"
-			if lrcContent, err := os.ReadFile(lrcPath); err == nil {
-				track.Lyrics = string(lrcContent)
-			}
+			mu.Lock()
+			defer mu.Unlock()
 
-			// Add the track to the database
-			if err := db.addTrackFromFile(track); err != nil {
-				return err
+			if track != nil {
+				tracks = append(tracks, track)
 			}
-		}
+			if artist != nil {
+				artists[artist.Name] = artist
+			}
+			if album != nil {
+				albums[album.Name] = album
+			}
+		}()
 
 		return nil
 	})
+
+	wg.Wait()
+
+	if err != nil {
+		return err
+	}
+
+	// Convert maps to slices
+	artistSlice := make([]*Artist, 0, len(artists))
+	for _, a := range artists {
+		artistSlice = append(artistSlice, a)
+	}
+
+	albumSlice := make([]*Album, 0, len(albums))
+	for _, a := range albums {
+		albumSlice = append(albumSlice, a)
+	}
+
+	// Add artists, albums, and tracks to the database
+	if err = db.AddArtists(artistSlice); err != nil {
+		return err
+	}
+	if err = db.AddAlbums(albumSlice); err != nil {
+		return err
+	}
+	if err = db.AddTracks(tracks); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func loadTrackFile(filePath string) (*TrackFile, error) {
-	file, err := os.Open(filePath)
+func processFile(path string, existingHashes map[string]struct{}) (*Track, *Artist, *Album, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	defer file.Close()
 
-	// Calculate SHA512 sum
-	hash := sha512.New()
+	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	sha512sum := hex.EncodeToString(hash.Sum(nil))
+	sha256sum := hex.EncodeToString(hash.Sum(nil))
 
-	// Rewind file for metadata reading
-	if _, err := file.Seek(0, 0); err != nil {
-		return nil, err
+	if _, exists := existingHashes[sha256sum]; exists {
+		return nil, nil, nil, nil
 	}
 
-	// Read metadata
+	if _, err = file.Seek(0, 0); err != nil {
+		return nil, nil, nil, err
+	}
+
 	metadata, err := tag.ReadFrom(file)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
-	duration := 0
+	artist := &Artist{Name: metadata.Artist()}
 
-	track := &TrackFile{
-		FilePath:  filePath,
+	album := &Album{
+		Name:        metadata.Album(),
+		ReleaseDate: sql.NullTime{Time: time.Date(metadata.Year(), 1, 1, 0, 0, 0, 0, time.UTC), Valid: metadata.Year() != 0},
+		Artists:     []Artist{*artist},
+	}
+
+	track := &Track{
 		Name:      metadata.Title(),
-		Artist:    metadata.Artist(),
-		Album:     metadata.Album(),
-		Duration:  duration,
-		SHA512Sum: sha512sum,
+		Duration:  0,
+		FilePath:  path,
+		SHA256Sum: sha256sum,
+		Artists:   []Artist{*artist},
 	}
 
-	return track, nil
-}
-
-func (db *DB) addTrackFromFile(track *TrackFile) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Check if artist exists, if not add it
-	var artistID int64
-	err = tx.QueryRow("SELECT artist_id FROM artists WHERE name = ?", track.Artist).Scan(&artistID)
-	if err == sql.ErrNoRows {
-		result, err := tx.Exec("INSERT INTO artists (name) VALUES (?)", track.Artist)
-		if err != nil {
-			return err
-		}
-		artistID, err = result.LastInsertId()
-		if err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	}
-
-	// Check if album exists, if not add it
-	var albumID int64
-	err = tx.QueryRow("SELECT album_id FROM albums WHERE name = ?", track.Album).Scan(&albumID)
-	if err == sql.ErrNoRows {
-		result, err := tx.Exec("INSERT INTO albums (name, release_date) VALUES (?, ?)", track.Album, time.Now())
-		if err != nil {
-			return err
-		}
-		albumID, err = result.LastInsertId()
-		if err != nil {
-			return err
-		}
-
-		// Link album to artist
-		_, err = tx.Exec("INSERT INTO album_artists (album_id, artist_id) VALUES (?, ?)", albumID, artistID)
-		if err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	}
-
-	// Add track
-	result, err := tx.Exec("INSERT INTO tracks (album_id, name, duration, lyrics, is_explicit, file_path, sha512sum) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		albumID, track.Name, track.Duration, track.Lyrics, track.IsExplicit, track.FilePath, track.SHA512Sum)
-	if err != nil {
-		return err
-	}
-
-	trackID, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-
-	// Link track to artist
-	_, err = tx.Exec("INSERT INTO track_artists (track_id, artist_id) VALUES (?, ?)", trackID, artistID)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit()
+	return track, artist, album, nil
 }

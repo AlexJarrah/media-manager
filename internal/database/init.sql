@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS albums (
 
 -- Album Artists table
 CREATE TABLE IF NOT EXISTS album_artists (
-    album_id INTEGER,
-    artist_id INTEGER,
+    album_id INTEGER NOT NULL,
+    artist_id INTEGER NOT NULL,
     PRIMARY KEY (album_id, artist_id),
     FOREIGN KEY (album_id) REFERENCES albums (album_id),
     FOREIGN KEY (artist_id) REFERENCES artists (artist_id)
@@ -26,20 +26,20 @@ CREATE TABLE IF NOT EXISTS album_artists (
 -- Tracks table
 CREATE TABLE IF NOT EXISTS tracks (
     track_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    album_id INTEGER,
+    album_id INTEGER NOT NULL,
     name TEXT NOT NULL,
-    duration INTEGER, -- seconds
+    duration INTEGER NOT NULL, -- seconds
     lyrics TEXT,
     is_explicit BOOLEAN DEFAULT 0,
-    file_path TEXT, -- Path to the track file
-    sha512sum TEXT NOT NULL UNIQUE, -- SHA-512 checksum of the track file
+    file_path TEXT NOT NULL UNIQUE, -- Path to the track file
+    sha256sum TEXT NOT NULL UNIQUE, -- SHA-256 checksum of the track file
     FOREIGN KEY (album_id) REFERENCES albums (album_id)
 );
 
 -- Track Artists table
 CREATE TABLE IF NOT EXISTS track_artists (
-    track_id INTEGER,
-    artist_id INTEGER,
+    track_id INTEGER NOT NULL,
+    artist_id INTEGER NOT NULL,
     PRIMARY KEY (track_id, artist_id),
     FOREIGN KEY (track_id) REFERENCES tracks (track_id),
     FOREIGN KEY (artist_id) REFERENCES artists (artist_id)
@@ -55,9 +55,9 @@ CREATE TABLE IF NOT EXISTS users (
 -- Listens table
 CREATE TABLE IF NOT EXISTS listens (
     listen_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    track_id INTEGER,
-    listen_time INTEGER, -- seconds
+    user_id INTEGER NOT NULL,
+    track_id INTEGER NOT NULL,
+    listen_time INTEGER NOT NULL, -- seconds
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (user_id),
     FOREIGN KEY (track_id) REFERENCES tracks (track_id)
@@ -71,8 +71,8 @@ CREATE TABLE IF NOT EXISTS tags (
 
 -- Track Tags table
 CREATE TABLE IF NOT EXISTS track_tags (
-    track_id INTEGER,
-    tag_id INTEGER,
+    track_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL,
     PRIMARY KEY (track_id, tag_id),
     FOREIGN KEY (track_id) REFERENCES tracks (track_id),
     FOREIGN KEY (tag_id) REFERENCES tags (tag_id)
@@ -80,8 +80,8 @@ CREATE TABLE IF NOT EXISTS track_tags (
 
 -- Album Tags table
 CREATE TABLE IF NOT EXISTS album_tags (
-    album_id INTEGER,
-    tag_id INTEGER,
+    album_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL,
     PRIMARY KEY (album_id, tag_id),
     FOREIGN KEY (album_id) REFERENCES albums (album_id),
     FOREIGN KEY (tag_id) REFERENCES tags (tag_id)
@@ -89,8 +89,8 @@ CREATE TABLE IF NOT EXISTS album_tags (
 
 -- Artist Tags table
 CREATE TABLE IF NOT EXISTS artist_tags (
-    artist_id INTEGER,
-    tag_id INTEGER,
+    artist_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL,
     PRIMARY KEY (artist_id, tag_id),
     FOREIGN KEY (artist_id) REFERENCES artists (artist_id),
     FOREIGN KEY (tag_id) REFERENCES tags (tag_id)
@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS artist_tags (
 -- Playlists table
 CREATE TABLE IF NOT EXISTS playlists (
     playlist_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
+    user_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     is_favorite BOOLEAN DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users (user_id)
@@ -107,8 +107,8 @@ CREATE TABLE IF NOT EXISTS playlists (
 
 -- Playlist Tracks table
 CREATE TABLE IF NOT EXISTS playlist_tracks (
-    playlist_id INTEGER,
-    track_id INTEGER,
+    playlist_id INTEGER NOT NULL,
+    track_id INTEGER NOT NULL,
     PRIMARY KEY (playlist_id, track_id),
     FOREIGN KEY (playlist_id) REFERENCES playlists (playlist_id),
     FOREIGN KEY (track_id) REFERENCES tracks (track_id)
@@ -116,8 +116,8 @@ CREATE TABLE IF NOT EXISTS playlist_tracks (
 
 -- Playlist Artists table
 CREATE TABLE IF NOT EXISTS playlist_artists (
-    playlist_id INTEGER,
-    artist_id INTEGER,
+    playlist_id INTEGER NOT NULL,
+    artist_id INTEGER NOT NULL,
     PRIMARY KEY (playlist_id, artist_id),
     FOREIGN KEY (playlist_id) REFERENCES playlists (playlist_id),
     FOREIGN KEY (artist_id) REFERENCES artists (artist_id)
@@ -125,8 +125,8 @@ CREATE TABLE IF NOT EXISTS playlist_artists (
 
 -- Playlist Albums table
 CREATE TABLE IF NOT EXISTS playlist_albums (
-    playlist_id INTEGER,
-    album_id INTEGER,
+    playlist_id INTEGER NOT NULL,
+    album_id INTEGER NOT NULL,
     PRIMARY KEY (playlist_id, album_id),
     FOREIGN KEY (playlist_id) REFERENCES playlists (playlist_id),
     FOREIGN KEY (album_id) REFERENCES albums (album_id)
