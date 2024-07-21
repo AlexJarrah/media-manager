@@ -105,7 +105,7 @@ func onTrackChange(player players.Player) {
 	}
 	defer db.Close()
 
-	tracks, err := db.GetTracks("name", fmt.Sprintf("'%s'", player.Title))
+	tracks, err := db.GetTracks("name", fmt.Sprintf("%s", player.Title))
 	if err != nil {
 		log.Println(err)
 		return
