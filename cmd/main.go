@@ -19,6 +19,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	db, err := database.NewDB()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer db.Close()
+
 	conn, err := dbus.SessionBus()
 	if err != nil {
 		log.Fatal(err)

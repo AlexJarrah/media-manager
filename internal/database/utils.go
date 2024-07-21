@@ -38,7 +38,7 @@ func (db *DB) AddArtists(artists []*Artist) error {
 }
 
 // GetArtists retrieves multiple artists from the database
-func (db *DB) GetArtists(key, value string) ([]*Artist, error) {
+func (db *DB) GetArtists(key string, value any) ([]*Artist, error) {
 	var query string
 	var rows *sql.Rows
 	var err error
@@ -104,7 +104,7 @@ func (db *DB) AddAlbums(albums []*Album) error {
 }
 
 // GetAlbums retrieves multiple albums from the database
-func (db *DB) GetAlbums(key, value string) ([]*Album, error) {
+func (db *DB) GetAlbums(key string, value any) ([]*Album, error) {
 	var query string
 	var rows *sql.Rows
 	var err error
@@ -159,14 +159,39 @@ func (db *DB) AddTracks(tracks []*Track) error {
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare("INSERT INTO tracks (album_id, name, duration, lyrics, is_explicit, file_path, sha256sum) VALUES (?, ?, ?, ?, ?, ?, ?)")
+	// Prepare statements
+	stmtTrack, err := tx.Prepare("INSERT INTO tracks (album_id, name, duration, lyrics, is_explicit, file_path, sha256sum) VALUES (?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer stmtTrack.Close()
+
+	stmtAlbum, err := tx.Prepare("INSERT INTO albums (name, release_date, image_uri) VALUES (?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmtAlbum.Close()
 
 	for _, track := range tracks {
-		result, err := stmt.Exec(track.AlbumID, track.Name, track.Duration, track.Lyrics, track.IsExplicit, track.FilePath, track.SHA256Sum)
+		// Check if album exists, if not, add it
+		var albumID int64
+		err := db.QueryRow("SELECT album_id FROM albums WHERE name = ?", track.Album.Name).Scan(&albumID)
+		if err == sql.ErrNoRows {
+			result, err := stmtAlbum.Exec(track.Album.Name, track.Album.ReleaseDate, track.Album.ImageURI)
+			if err != nil {
+				return err
+			}
+			albumID, err = result.LastInsertId()
+			if err != nil {
+				return err
+			}
+			track.Album.ID = albumID
+		} else if err != nil {
+			return err
+		}
+
+		// Insert track
+		result, err := stmtTrack.Exec(albumID, track.Name, track.Duration, track.Lyrics, track.IsExplicit, track.FilePath, track.SHA256Sum)
 		if err != nil {
 			return err
 		}
@@ -175,6 +200,7 @@ func (db *DB) AddTracks(tracks []*Track) error {
 			return err
 		}
 
+		// Add artists
 		for _, artist := range track.Artists {
 			_, err = tx.Exec("INSERT INTO track_artists (track_id, artist_id) VALUES (?, ?)", track.ID, artist.ID)
 			if err != nil {
@@ -182,6 +208,7 @@ func (db *DB) AddTracks(tracks []*Track) error {
 			}
 		}
 
+		// Add tags
 		for _, tag := range track.Tags {
 			_, err = tx.Exec("INSERT INTO track_tags (track_id, tag_id) VALUES (?, ?)", track.ID, tag.ID)
 			if err != nil {
@@ -194,16 +221,27 @@ func (db *DB) AddTracks(tracks []*Track) error {
 }
 
 // GetTracks retrieves multiple tracks from the database
-func (db *DB) GetTracks(key, value string) ([]*Track, error) {
+func (db *DB) GetTracks(key string, value any) ([]*Track, error) {
 	var query string
 	var rows *sql.Rows
 	var err error
 
 	if value == "" {
-		query = "SELECT track_id, album_id, name, duration, lyrics, is_explicit, file_path, sha256sum FROM tracks "
+		query = `
+      SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
+      a.album_id, a.name, a.release_date, a.image_uri
+      FROM tracks t
+      JOIN albums a ON t.album_id = a.album_id
+    `
 		rows, err = db.Query(query)
 	} else {
-		query = fmt.Sprintf("SELECT track_id, album_id, name, duration, lyrics, is_explicit, file_path, sha256sum FROM tracks WHERE %s = ?", key)
+		query = fmt.Sprintf(`
+      SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
+        a.album_id, a.name, a.release_date, a.image_uri
+      FROM tracks t
+      JOIN albums a ON t.album_id = a.album_id
+      WHERE t.%s = ?
+    `, key)
 		rows, err = db.Query(query, value)
 	}
 
@@ -215,39 +253,56 @@ func (db *DB) GetTracks(key, value string) ([]*Track, error) {
 	var tracks []*Track
 	for rows.Next() {
 		var track Track
-		err := rows.Scan(&track.ID, &track.AlbumID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum)
+		var album Album
+		err := rows.Scan(
+			&track.ID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum,
+			&album.ID, &album.Name, &album.ReleaseDate, &album.ImageURI,
+		)
 		if err != nil {
 			return nil, err
 		}
+		track.Album = album
 
-		artistRows, err := db.Query("SELECT a.artist_id, a.name, a.bio, a.image_uri FROM artists a JOIN track_artists ta ON a.artist_id = ta.artist_id WHERE ta.track_id = ?", track.ID)
+		// Get track artists
+		trackArtistRows, err := db.Query(`
+      SELECT a.artist_id, a.name, a.bio, a.image_uri
+      FROM artists a
+      JOIN track_artists ta ON a.artist_id = ta.artist_id
+      WHERE ta.track_id = ?
+    `, track.ID)
 		if err != nil {
 			return nil, err
 		}
-		defer artistRows.Close()
+		defer trackArtistRows.Close()
 
-		for artistRows.Next() {
+		for trackArtistRows.Next() {
 			var artist Artist
-			err := artistRows.Scan(&artist.ID, &artist.Name, &artist.Bio, &artist.ImageURI)
+			err := trackArtistRows.Scan(&artist.ID, &artist.Name, &artist.Bio, &artist.ImageURI)
 			if err != nil {
 				return nil, err
 			}
 			track.Artists = append(track.Artists, artist)
 		}
 
-		tagRows, err := db.Query("SELECT t.tag_id, t.name FROM tags t JOIN track_tags tt ON t.tag_id = tt.tag_id WHERE tt.track_id = ?", track.ID)
+		// Get album artists
+		albumArtistRows, err := db.Query(`
+            SELECT a.artist_id, a.name, a.bio, a.image_uri
+            FROM artists a
+            JOIN album_artists aa ON a.artist_id = aa.artist_id
+            WHERE aa.album_id = ?
+        `, track.Album.ID)
 		if err != nil {
 			return nil, err
 		}
-		defer tagRows.Close()
+		defer albumArtistRows.Close()
 
-		for tagRows.Next() {
-			var tag Tag
-			err := tagRows.Scan(&tag.ID, &tag.Name)
+		for albumArtistRows.Next() {
+			var artist Artist
+			err := albumArtistRows.Scan(&artist.ID, &artist.Name, &artist.Bio, &artist.ImageURI)
 			if err != nil {
 				return nil, err
 			}
-			track.Tags = append(track.Tags, tag)
+			track.Album.Artists = append(track.Album.Artists, artist)
 		}
 
 		tracks = append(tracks, &track)
@@ -290,7 +345,7 @@ func (db *DB) AddUsers(users []*User) error {
 }
 
 // GetUsers retrieves multiple users from the database
-func (db *DB) GetUsers(key, value string) ([]*User, error) {
+func (db *DB) GetUsers(key string, value any) ([]*User, error) {
 	var query string
 	var rows *sql.Rows
 	var err error
@@ -357,7 +412,7 @@ func (db *DB) AddListens(listens []*Listen) error {
 }
 
 // GetUserListens retrieves all listen events for a user from the database
-func (db *DB) GetUserListens(userId int64, key, value string) ([]*Listen, error) {
+func (db *DB) GetUserListens(userId int64, key string, value any) ([]*Listen, error) {
 	var query string
 	var rows *sql.Rows
 	var err error
@@ -417,7 +472,7 @@ func (db *DB) AddTags(tags []*Tag) error {
 }
 
 // GetTags retrieves multiple tags from the database
-func (db *DB) GetTags(key, value string) ([]*Tag, error) {
+func (db *DB) GetTags(key string, value any) ([]*Tag, error) {
 	var query string
 	var rows *sql.Rows
 	var err error
@@ -498,7 +553,7 @@ func (db *DB) AddPlaylists(playlists []*Playlist) error {
 }
 
 // GetPlaylists retrieves multiple playlists from the database
-func (db *DB) GetPlaylists(key, value string) ([]*Playlist, error) {
+func (db *DB) GetPlaylists(key string, value any) ([]*Playlist, error) {
 	var query string
 	var rows *sql.Rows
 	var err error
@@ -524,7 +579,14 @@ func (db *DB) GetPlaylists(key, value string) ([]*Playlist, error) {
 			return nil, err
 		}
 
-		trackRows, err := db.Query("SELECT t.track_id, t.album_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum FROM tracks t JOIN playlist_tracks pt ON t.track_id = pt.track_id WHERE pt.playlist_id = ?", playlist.ID)
+		trackRows, err := db.Query(`
+      SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
+        a.album_id, a.name, a.release_date, a.image_uri
+      FROM tracks t
+      JOIN playlist_tracks pt ON t.track_id = pt.track_id
+      JOIN albums a ON t.album_id = a.album_id
+      WHERE pt.playlist_id = ?
+    `, playlist.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -532,10 +594,13 @@ func (db *DB) GetPlaylists(key, value string) ([]*Playlist, error) {
 
 		for trackRows.Next() {
 			var track Track
-			err := trackRows.Scan(&track.ID, &track.AlbumID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum)
+			var album Album
+			err := trackRows.Scan(&track.ID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum,
+				&album.ID, &album.Name, &album.ReleaseDate, &album.ImageURI)
 			if err != nil {
 				return nil, err
 			}
+			track.Album = album
 			playlist.Tracks = append(playlist.Tracks, track)
 		}
 
@@ -577,7 +642,13 @@ func (db *DB) GetPlaylists(key, value string) ([]*Playlist, error) {
 
 // SearchTracks searches for tracks based on a query string
 func (db *DB) SearchTracks(query string) ([]*Track, error) {
-	rows, err := db.Query("SELECT track_id, album_id, name, duration, lyrics, is_explicit, file_path, sha256sum FROM tracks WHERE name LIKE ? OR lyrics LIKE ?", "%"+query+"%", "%"+query+"%")
+	rows, err := db.Query(`
+    SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
+      a.album_id, a.name, a.release_date, a.image_uri
+    FROM tracks t
+    JOIN albums a ON t.album_id = a.album_id
+    WHERE t.name LIKE ? OR t.lyrics LIKE ?
+  `, "%"+query+"%", "%"+query+"%")
 	if err != nil {
 		return nil, err
 	}
@@ -586,10 +657,13 @@ func (db *DB) SearchTracks(query string) ([]*Track, error) {
 	var tracks []*Track
 	for rows.Next() {
 		var track Track
-		err := rows.Scan(&track.ID, &track.AlbumID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum)
+		var album Album
+		err := rows.Scan(&track.ID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum,
+			&album.ID, &album.Name, &album.ReleaseDate, &album.ImageURI)
 		if err != nil {
 			return nil, err
 		}
+		track.Album = album
 		tracks = append(tracks, &track)
 	}
 
@@ -599,13 +673,16 @@ func (db *DB) SearchTracks(query string) ([]*Track, error) {
 // GetTopTracks returns the top N most listened tracks
 func (db *DB) GetTopTracks(limit int) ([]*Track, error) {
 	rows, err := db.Query(`
-		SELECT t.track_id, t.album_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum, COUNT(*) as listen_count
-		FROM tracks t
-		JOIN listens l ON t.track_id = l.track_id
-		GROUP BY t.track_id
-		ORDER BY listen_count DESC
-		LIMIT ?
-	`, limit)
+    SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
+      a.album_id, a.name, a.release_date, a.image_uri,
+      COUNT(*) as listen_count
+    FROM tracks t
+    JOIN albums a ON t.album_id = a.album_id
+    JOIN listens l ON t.track_id = l.track_id
+    GROUP BY t.track_id
+    ORDER BY listen_count DESC
+    LIMIT ?
+  `, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -614,11 +691,15 @@ func (db *DB) GetTopTracks(limit int) ([]*Track, error) {
 	var tracks []*Track
 	for rows.Next() {
 		var track Track
+		var album Album
 		var listenCount int
-		err := rows.Scan(&track.ID, &track.AlbumID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum, &listenCount)
+		err := rows.Scan(&track.ID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum,
+			&album.ID, &album.Name, &album.ReleaseDate, &album.ImageURI,
+			&listenCount)
 		if err != nil {
 			return nil, err
 		}
+		track.Album = album
 		tracks = append(tracks, &track)
 	}
 
@@ -628,11 +709,13 @@ func (db *DB) GetTopTracks(limit int) ([]*Track, error) {
 // GetRecentlyAddedTracks returns the N most recently added tracks
 func (db *DB) GetRecentlyAddedTracks(limit int) ([]*Track, error) {
 	rows, err := db.Query(`
-		SELECT track_id, album_id, name, duration, lyrics, is_explicit, file_path, sha256sum
-		FROM tracks
-		ORDER BY track_id DESC
-		LIMIT ?
-	`, limit)
+    SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
+      a.album_id, a.name, a.release_date, a.image_uri
+    FROM tracks t
+    JOIN albums a ON t.album_id = a.album_id
+    ORDER BY t.track_id DESC
+    LIMIT ?
+  `, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -641,10 +724,13 @@ func (db *DB) GetRecentlyAddedTracks(limit int) ([]*Track, error) {
 	var tracks []*Track
 	for rows.Next() {
 		var track Track
-		err := rows.Scan(&track.ID, &track.AlbumID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum)
+		var album Album
+		err := rows.Scan(&track.ID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum,
+			&album.ID, &album.Name, &album.ReleaseDate, &album.ImageURI)
 		if err != nil {
 			return nil, err
 		}
+		track.Album = album
 		tracks = append(tracks, &track)
 	}
 
@@ -675,11 +761,13 @@ func (db *DB) GetUserFavoritePlaylists(userID int64) ([]*Playlist, error) {
 // GetTracksByTag returns tracks associated with a specific tag
 func (db *DB) GetTracksByTag(tagID int64) ([]*Track, error) {
 	rows, err := db.Query(`
-		SELECT t.track_id, t.album_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum
-		FROM tracks t
-		JOIN track_tags tt ON t.track_id = tt.track_id
-		WHERE tt.tag_id = ?
-	`, tagID)
+    SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
+      a.album_id, a.name, a.release_date, a.image_uri
+    FROM tracks t
+    JOIN albums a ON t.album_id = a.album_id
+    JOIN track_tags tt ON t.track_id = tt.track_id
+    WHERE tt.tag_id = ?
+  `, tagID)
 	if err != nil {
 		return nil, err
 	}
@@ -688,10 +776,13 @@ func (db *DB) GetTracksByTag(tagID int64) ([]*Track, error) {
 	var tracks []*Track
 	for rows.Next() {
 		var track Track
-		err := rows.Scan(&track.ID, &track.AlbumID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum)
+		var album Album
+		err := rows.Scan(&track.ID, &track.Name, &track.Duration, &track.Lyrics, &track.IsExplicit, &track.FilePath, &track.SHA256Sum,
+			&album.ID, &album.Name, &album.ReleaseDate, &album.ImageURI)
 		if err != nil {
 			return nil, err
 		}
+		track.Album = album
 		tracks = append(tracks, &track)
 	}
 

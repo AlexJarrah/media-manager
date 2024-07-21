@@ -1,19 +1,9 @@
 package database
 
-import (
-	"path/filepath"
-
-	"gitlab.com/AlexJarrah/media-manager/internal/filesystem"
-)
+import "gitlab.com/AlexJarrah/media-manager/internal/filesystem"
 
 func Initialize() error {
-	dataDir, err := filesystem.GetDataDir()
-	if err != nil {
-		return err
-	}
-
-	dbPath := filepath.Join(dataDir, "data.db")
-	db, err := NewDB(dbPath)
+	db, err := NewDB()
 	if err != nil {
 		return err
 	}

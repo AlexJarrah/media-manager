@@ -91,18 +91,39 @@ func (db *DB) LoadTracksFromDirectory(dirPath string) error {
 		artistSlice = append(artistSlice, a)
 	}
 
+	// Add artists to the database and update their IDs
+	if err = db.AddArtists(artistSlice); err != nil {
+		return err
+	}
+
+	// Update album and track relationships with the new artist IDs
+	for _, album := range albums {
+		for i, artist := range album.Artists {
+			if updatedArtist, ok := artists[artist.Name]; ok {
+				album.Artists[i] = *updatedArtist
+			}
+		}
+	}
+
+	for _, track := range tracks {
+		for i, artist := range track.Artists {
+			if updatedArtist, ok := artists[artist.Name]; ok {
+				track.Artists[i] = *updatedArtist
+			}
+		}
+	}
+
+	// Convert albums map to slice
 	albumSlice := make([]*Album, 0, len(albums))
 	for _, a := range albums {
 		albumSlice = append(albumSlice, a)
 	}
 
-	// Add artists, albums, and tracks to the database
-	if err = db.AddArtists(artistSlice); err != nil {
-		return err
-	}
+	// Add albums and tracks to the database
 	if err = db.AddAlbums(albumSlice); err != nil {
 		return err
 	}
+
 	if err = db.AddTracks(tracks); err != nil {
 		return err
 	}
@@ -137,11 +158,12 @@ func processFile(path string, existingHashes map[string]struct{}) (*Track, *Arti
 	}
 
 	artist := &Artist{Name: metadata.Artist()}
+	albumArtist := &Artist{Name: metadata.AlbumArtist()}
 
 	album := &Album{
 		Name:        metadata.Album(),
 		ReleaseDate: sql.NullTime{Time: time.Date(metadata.Year(), 1, 1, 0, 0, 0, 0, time.UTC), Valid: metadata.Year() != 0},
-		Artists:     []Artist{*artist},
+		Artists:     []Artist{*albumArtist},
 	}
 
 	track := &Track{
@@ -150,6 +172,7 @@ func processFile(path string, existingHashes map[string]struct{}) (*Track, *Arti
 		FilePath:  path,
 		SHA256Sum: sha256sum,
 		Artists:   []Artist{*artist},
+		Album:     *album,
 	}
 
 	return track, artist, album, nil

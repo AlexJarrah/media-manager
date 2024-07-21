@@ -7,6 +7,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"gitlab.com/AlexJarrah/media-manager/internal/database"
 	"gitlab.com/AlexJarrah/media-manager/internal/filesystem"
 	"gitlab.com/AlexJarrah/media-manager/internal/players"
 	"gitlab.com/AlexJarrah/media-manager/internal/providers/lastfm"
@@ -97,35 +98,67 @@ func handlePlaybackStatus(player *players.Player, status dbus.Variant) {
 func onTrackChange(player players.Player) {
 	log.Printf("Total track play time: %v (%s)\n", player.GetTotalPlayTime(), player.Title)
 
+	db, err := database.NewDB()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer db.Close()
+
+	tracks, err := db.GetTracks("name", fmt.Sprintf("'%s'", player.Title))
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	if len(tracks) == 0 {
+		log.Println("track not found in database")
+		return
+	}
+
+	track := tracks[0]
+	listen := database.Listen{
+		UserID:     1,
+		TrackID:    track.ID,
+		ListenTime: int(player.GetTotalPlayTime().Seconds()),
+		Timestamp:  time.Now(),
+	}
+
+	err = db.AddListens([]*database.Listen{&listen})
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	log.Printf("Logged track listen to %s (%.0fs)", player.Title, player.GetTotalPlayTime().Seconds())
+
 	// Scrobble only if 50%+ of the track was listened to
 	listenedPercentage := (player.GetTotalPlayTime().Seconds() / float64(player.LengthSeconds)) * 100
-	if listenedPercentage < 50 {
-		log.Printf("Track listening time (%.0fs) is less than 50%% (%.0f%%) of the track length (%ds). Not scrobbling %s.\n", player.GetTotalPlayTime().Seconds(), listenedPercentage, player.LengthSeconds, player.Title)
-		return
-	}
+	if listenedPercentage > 50 {
+		var err error
+		player.MBID, err = musicbrainz.FetchMBID(player)
+		if err != nil {
+			log.Println(err)
+		}
 
-	var err error
-	player.MBID, err = musicbrainz.FetchMBID(player)
-	if err != nil {
-		log.Println(err)
-	}
+		config, err := filesystem.GetConfigFile()
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
-	config, err := filesystem.GetConfigFile()
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	// Scrobble only if 50%+ of the track was listened to
-	if player.GetTotalPlayTime().Seconds() >= float64(player.LengthSeconds)/2 {
 		sessionKey, err := lastfm.Authenticate(config.LastFM)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			return
 		}
 
 		err = lastfm.Scrobble(player, config.LastFM.APIKey, config.LastFM.APISecret, sessionKey)
 		if err != nil {
 			log.Println(err)
+			return
 		}
+	} else {
+		log.Printf("Track listening time (%.0fs) is less than 50%% (%.0f%%) of the track length (%ds). Not scrobbling %s.\n", player.GetTotalPlayTime().Seconds(), listenedPercentage, player.LengthSeconds, player.Title)
 	}
 }

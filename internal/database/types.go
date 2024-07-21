@@ -2,7 +2,10 @@ package database
 
 import (
 	"database/sql"
+	"path/filepath"
 	"time"
+
+	"gitlab.com/AlexJarrah/media-manager/internal/filesystem"
 )
 
 // DB represents the database connection
@@ -11,7 +14,14 @@ type DB struct {
 }
 
 // NewDB creates a new database connection
-func NewDB(dbPath string) (*DB, error) {
+func NewDB() (*DB, error) {
+	dataDir, err := filesystem.GetDataDir()
+	if err != nil {
+		return nil, err
+	}
+
+	dbPath := filepath.Join(dataDir, "data.db")
+
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, err
@@ -39,7 +49,6 @@ type Album struct {
 // Track represents a track in the database
 type Track struct {
 	ID         int64          `json:"id"`
-	AlbumID    int64          `json:"album_id"`
 	Name       string         `json:"name"`
 	Duration   int            `json:"duration"`
 	Lyrics     sql.NullString `json:"lyrics"`
@@ -47,6 +56,7 @@ type Track struct {
 	FilePath   string         `json:"file_path"`
 	SHA256Sum  string         `json:"sha256sum"`
 	Artists    []Artist       `json:"artists"`
+	Album      Album          `json:"album"`
 	Tags       []Tag          `json:"tags"`
 }
 
