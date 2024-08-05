@@ -40,7 +40,13 @@ func handleSignals(c <-chan *dbus.Signal, conn *dbus.Conn) {
 		}
 
 		if variant, ok := props["Metadata"]; ok {
-			handleNewTrack(player, variant, conn)
+			metadata := variant.Value().(map[string]dbus.Variant)
+			if v, exists := metadata["xesam:title"]; exists {
+				title := v.Value().(string)
+				if player.Title != title && title != "" {
+					handleNewTrack(player, variant, conn)
+				}
+			}
 		}
 
 		if status, ok := props["PlaybackStatus"]; ok {
