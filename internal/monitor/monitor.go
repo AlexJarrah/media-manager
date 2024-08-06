@@ -3,6 +3,7 @@ package monitor
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -39,13 +40,24 @@ func handleSignals(c <-chan *dbus.Signal, conn *dbus.Conn) {
 			continue
 		}
 
+		// Verify new track is playing by comparing track & artist names
 		if variant, ok := props["Metadata"]; ok {
 			metadata := variant.Value().(map[string]dbus.Variant)
+			var newTitle, newArtists bool
+
 			if v, exists := metadata["xesam:title"]; exists {
 				title := v.Value().(string)
-				if player.Title != title && title != "" {
-					handleNewTrack(player, variant, conn)
-				}
+				newTitle = player.Title != title && title != ""
+			}
+
+			if v, exists := metadata["xesam:artist"]; exists {
+				artists := v.Value().([]string)
+				newArtists = strings.Join(player.Artists, ",") != strings.Join(artists, ",") && len(artists) != 0
+			}
+
+			// If track title and/or artists changed, handle as new track
+			if newTitle || newArtists {
+				handleNewTrack(player, variant, conn)
 			}
 		}
 
@@ -122,7 +134,21 @@ func onTrackChange(player players.Player) {
 		return
 	}
 
-	track := tracks[0]
+	// Verify all duplicate track names by matching artist names
+	var track *database.Track
+	for _, t := range tracks {
+		for _, a := range t.Artists {
+			if strings.Contains(strings.Join(player.Artists, ","), a.Name) {
+				track = t
+			}
+		}
+	}
+
+	// Default to the first result if no track was found (artist might not be provided)
+	if track == nil {
+		track = tracks[0]
+	}
+
 	listen := database.Listen{
 		UserID:     1,
 		TrackID:    track.ID,
