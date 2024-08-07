@@ -37,6 +37,34 @@ func (db *DB) AddArtists(artists []*Artist) error {
 	return tx.Commit()
 }
 
+// UpdateArtist updates an artist in the database
+func (db *DB) UpdateArtist(artist *Artist, keys []string, updateKey, updateValue string) error {
+	keyMap := map[string]interface{}{
+		"name":      artist.Name,
+		"bio":       artist.Bio,
+		"image_uri": artist.ImageURI,
+	}
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE artists SET ")
+	args := []interface{}{}
+	for i, key := range keys {
+		if val, ok := keyMap[key]; ok {
+			if i > 0 {
+				queryBuilder.WriteString(", ")
+			}
+			queryBuilder.WriteString(key + " = ?")
+			args = append(args, val)
+		}
+	}
+
+	queryBuilder.WriteString(" WHERE " + updateKey + " = ?")
+	args = append(args, updateValue)
+
+	_, err := db.Exec(queryBuilder.String(), args...)
+	return err
+}
+
 // GetArtists retrieves multiple artists from the database
 func (db *DB) GetArtists(key string, value any) ([]*Artist, error) {
 	var query string
@@ -92,6 +120,58 @@ func (db *DB) AddAlbums(albums []*Album) error {
 			return err
 		}
 
+		for _, artist := range album.Artists {
+			_, err = tx.Exec("INSERT INTO album_artists (album_id, artist_id) VALUES (?, ?)", album.ID, artist.ID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+// UpdateAlbum updates an album in the database
+func (db *DB) UpdateAlbum(album *Album, keys []string, updateKey, updateValue string) error {
+	keyMap := map[string]interface{}{
+		"name":         album.Name,
+		"release_date": album.ReleaseDate,
+		"image_uri":    album.ImageURI,
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE albums SET ")
+	args := []interface{}{}
+	for i, key := range keys {
+		if val, ok := keyMap[key]; ok {
+			if i > 0 {
+				queryBuilder.WriteString(", ")
+			}
+			queryBuilder.WriteString(key + " = ?")
+			args = append(args, val)
+		}
+	}
+
+	queryBuilder.WriteString(" WHERE " + updateKey + " = ?")
+	args = append(args, updateValue)
+
+	_, err = tx.Exec(queryBuilder.String(), args...)
+	if err != nil {
+		return err
+	}
+
+	// Update album artists if specified
+	if contains(keys, "artists") {
+		_, err = tx.Exec("DELETE FROM album_artists WHERE album_id = ?", album.ID)
+		if err != nil {
+			return err
+		}
 		for _, artist := range album.Artists {
 			_, err = tx.Exec("INSERT INTO album_artists (album_id, artist_id) VALUES (?, ?)", album.ID, artist.ID)
 			if err != nil {
@@ -209,6 +289,76 @@ func (db *DB) AddTracks(tracks []*Track) error {
 		}
 
 		// Add tags
+		for _, tag := range track.Tags {
+			_, err = tx.Exec("INSERT INTO track_tags (track_id, tag_id) VALUES (?, ?)", track.ID, tag.ID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+// UpdateTrack updates a track in the database
+func (db *DB) UpdateTrack(track *Track, keys []string, updateKey, updateValue string) error {
+	keyMap := map[string]interface{}{
+		"name":        track.Name,
+		"duration":    track.Duration,
+		"lyrics":      track.Lyrics,
+		"is_explicit": track.IsExplicit,
+		"file_path":   track.FilePath,
+		"sha256sum":   track.SHA256Sum,
+		"album_id":    track.Album.ID,
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE tracks SET ")
+	args := []interface{}{}
+	for i, key := range keys {
+		if val, ok := keyMap[key]; ok {
+			if i > 0 {
+				queryBuilder.WriteString(", ")
+			}
+			queryBuilder.WriteString(key + " = ?")
+			args = append(args, val)
+		}
+	}
+
+	queryBuilder.WriteString(" WHERE " + updateKey + " = ?")
+	args = append(args, updateValue)
+
+	_, err = tx.Exec(queryBuilder.String(), args...)
+	if err != nil {
+		return err
+	}
+
+	// Update track artists if specified
+	if contains(keys, "artists") {
+		_, err = tx.Exec("DELETE FROM track_artists WHERE track_id = ?", track.ID)
+		if err != nil {
+			return err
+		}
+		for _, artist := range track.Artists {
+			_, err = tx.Exec("INSERT INTO track_artists (track_id, artist_id) VALUES (?, ?)", track.ID, artist.ID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Update track tags if specified
+	if contains(keys, "tags") {
+		_, err = tx.Exec("DELETE FROM track_tags WHERE track_id = ?", track.ID)
+		if err != nil {
+			return err
+		}
 		for _, tag := range track.Tags {
 			_, err = tx.Exec("INSERT INTO track_tags (track_id, tag_id) VALUES (?, ?)", track.ID, tag.ID)
 			if err != nil {
@@ -344,6 +494,40 @@ func (db *DB) AddUsers(users []*User) error {
 	return tx.Commit()
 }
 
+// UpdateUser updates a user in the database
+func (db *DB) UpdateUser(user *User, keys []string, updateKey, updateValue string) error {
+	keyMap := map[string]interface{}{
+		"name": user.Name,
+	}
+
+	if contains(keys, "preferences") {
+		preferencesJSON, err := json.Marshal(user.Preferences)
+		if err != nil {
+			return err
+		}
+		keyMap["preferences"] = preferencesJSON
+	}
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE users SET ")
+	args := []interface{}{}
+	for i, key := range keys {
+		if val, ok := keyMap[key]; ok {
+			if i > 0 {
+				queryBuilder.WriteString(", ")
+			}
+			queryBuilder.WriteString(key + " = ?")
+			args = append(args, val)
+		}
+	}
+
+	queryBuilder.WriteString(" WHERE " + updateKey + " = ?")
+	args = append(args, updateValue)
+
+	_, err := db.Exec(queryBuilder.String(), args...)
+	return err
+}
+
 // GetUsers retrieves multiple users from the database
 func (db *DB) GetUsers(key string, value any) ([]*User, error) {
 	var query string
@@ -411,6 +595,35 @@ func (db *DB) AddListens(listens []*Listen) error {
 	return tx.Commit()
 }
 
+// UpdateListen updates a listen event in the database
+func (db *DB) UpdateListen(listen *Listen, keys []string, updateKey, updateValue string) error {
+	keyMap := map[string]interface{}{
+		"user_id":     listen.UserID,
+		"track_id":    listen.TrackID,
+		"listen_time": listen.ListenTime,
+		"timestamp":   listen.Timestamp,
+	}
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE listens SET ")
+	args := []interface{}{}
+	for i, key := range keys {
+		if val, ok := keyMap[key]; ok {
+			if i > 0 {
+				queryBuilder.WriteString(", ")
+			}
+			queryBuilder.WriteString(key + " = ?")
+			args = append(args, val)
+		}
+	}
+
+	queryBuilder.WriteString(" WHERE " + updateKey + " = ?")
+	args = append(args, updateValue)
+
+	_, err := db.Exec(queryBuilder.String(), args...)
+	return err
+}
+
 // GetUserListens retrieves all listen events for a user from the database
 func (db *DB) GetUserListens(userId int64, key string, value any) ([]*Listen, error) {
 	var query string
@@ -469,6 +682,32 @@ func (db *DB) AddTags(tags []*Tag) error {
 	}
 
 	return tx.Commit()
+}
+
+// UpdateTag updates a tag in the database
+func (db *DB) UpdateTag(tag *Tag, keys []string, updateKey, updateValue string) error {
+	keyMap := map[string]interface{}{
+		"name": tag.Name,
+	}
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE tags SET ")
+	args := []interface{}{}
+	for i, key := range keys {
+		if val, ok := keyMap[key]; ok {
+			if i > 0 {
+				queryBuilder.WriteString(", ")
+			}
+			queryBuilder.WriteString(key + " = ?")
+			args = append(args, val)
+		}
+	}
+
+	queryBuilder.WriteString(" WHERE " + updateKey + " = ?")
+	args = append(args, updateValue)
+
+	_, err := db.Exec(queryBuilder.String(), args...)
+	return err
 }
 
 // GetTags retrieves multiple tags from the database
@@ -541,6 +780,86 @@ func (db *DB) AddPlaylists(playlists []*Playlist) error {
 			}
 		}
 
+		for _, album := range playlist.Albums {
+			_, err = tx.Exec("INSERT INTO playlist_albums (playlist_id, album_id) VALUES (?, ?)", playlist.ID, album.ID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+// UpdatePlaylist updates a playlist in the database
+func (db *DB) UpdatePlaylist(playlist *Playlist, keys []string, updateKey, updateValue string) error {
+	keyMap := map[string]interface{}{
+		"user_id":     playlist.UserID,
+		"name":        playlist.Name,
+		"is_favorite": playlist.IsFavorite,
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE playlists SET ")
+	args := []interface{}{}
+	for i, key := range keys {
+		if val, ok := keyMap[key]; ok {
+			if i > 0 {
+				queryBuilder.WriteString(", ")
+			}
+			queryBuilder.WriteString(key + " = ?")
+			args = append(args, val)
+		}
+	}
+
+	queryBuilder.WriteString(" WHERE " + updateKey + " = ?")
+	args = append(args, updateValue)
+
+	_, err = tx.Exec(queryBuilder.String(), args...)
+	if err != nil {
+		return err
+	}
+
+	// Update playlist tracks if specified
+	if contains(keys, "tracks") {
+		_, err = tx.Exec("DELETE FROM playlist_tracks WHERE playlist_id = ?", playlist.ID)
+		if err != nil {
+			return err
+		}
+		for _, track := range playlist.Tracks {
+			_, err = tx.Exec("INSERT INTO playlist_tracks (playlist_id, track_id) VALUES (?, ?)", playlist.ID, track.ID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Update playlist artists if specified
+	if contains(keys, "artists") {
+		_, err = tx.Exec("DELETE FROM playlist_artists WHERE playlist_id = ?", playlist.ID)
+		if err != nil {
+			return err
+		}
+		for _, artist := range playlist.Artists {
+			_, err = tx.Exec("INSERT INTO playlist_artists (playlist_id, artist_id) VALUES (?, ?)", playlist.ID, artist.ID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Update playlist albums if specified
+	if contains(keys, "albums") {
+		_, err = tx.Exec("DELETE FROM playlist_albums WHERE playlist_id = ?", playlist.ID)
+		if err != nil {
+			return err
+		}
 		for _, album := range playlist.Albums {
 			_, err = tx.Exec("INSERT INTO playlist_albums (playlist_id, album_id) VALUES (?, ?)", playlist.ID, album.ID)
 			if err != nil {
@@ -826,4 +1145,14 @@ func (db *DB) RemoveTagsFromTrack(trackID int64, tagIDs []int64) error {
 	query := fmt.Sprintf("DELETE FROM track_tags WHERE track_id = ? AND tag_id IN (%s)", strings.Join(placeholders, ","))
 	_, err := db.Exec(query, args...)
 	return err
+}
+
+// Helper function to check if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
