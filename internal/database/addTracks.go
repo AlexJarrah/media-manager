@@ -148,6 +148,10 @@ func (db *DB) LoadTracksFromDirectory(dirPath string, mode uint8) error {
 		return err
 	} else {
 		for _, t := range tracks {
+			if v, exists := albums[t.Album.Name]; exists {
+				t.Album.ID = v.ID
+			}
+
 			keys := []string{
 				"name",
 				"duration",
