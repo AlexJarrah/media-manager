@@ -15,16 +15,35 @@ import (
 	"github.com/dhowden/tag"
 )
 
-func (db *DB) LoadTracksFromDirectory(dirPath string) error {
+// Modes
+const (
+	// Only add tracks not already in the database
+	AddNewTracks uint8 = iota
+
+	// Update track metadata by title
+	UpdateFromTitle
+
+	// Update track metadata by file path
+	UpdateFromFilePath
+
+	// Update track metadata by hash
+	UpdateFromHash
+)
+
+func (db *DB) LoadTracksFromDirectory(dirPath string, mode uint8) error {
 	supportedFormats := map[string]bool{
 		".mp3": true, ".m4a": true, ".m4b": true, ".m4p": true,
 		".alac": true, ".flac": true, ".ogg": true, ".dsf": true,
 	}
 
 	existingHashes := make(map[string]struct{})
-	existingTracks, _ := db.GetTracks("sha256sum", "")
-	for _, t := range existingTracks {
-		existingHashes[t.SHA256Sum] = struct{}{}
+
+	// Do not populate existing hashes for updating modes as no track should be ignored in these modes
+	if mode == AddNewTracks {
+		existingTracks, _ := db.GetTracks("sha256sum", "")
+		for _, t := range existingTracks {
+			existingHashes[t.SHA256Sum] = struct{}{}
+		}
 	}
 
 	var (
@@ -124,8 +143,38 @@ func (db *DB) LoadTracksFromDirectory(dirPath string) error {
 		return err
 	}
 
-	if err = db.AddTracks(tracks); err != nil {
+	if mode == AddNewTracks {
+		err = db.AddTracks(tracks)
 		return err
+	} else {
+		for _, t := range tracks {
+			keys := []string{
+				"name",
+				"duration",
+				"lyrics",
+				"is_explicit",
+				"file_path",
+				"sha256sum",
+				"album_id",
+			}
+
+			var key, value string
+			switch mode {
+			case UpdateFromTitle:
+				key = "title"
+				value = t.Name
+			case UpdateFromFilePath:
+				key = "file_path"
+				value = t.FilePath
+			case UpdateFromHash:
+				key = "sha256sum"
+				value = t.SHA256Sum
+			}
+
+			if err = db.UpdateTrack(t, keys, key, value); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil

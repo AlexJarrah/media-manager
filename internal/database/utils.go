@@ -38,7 +38,7 @@ func (db *DB) AddArtists(artists []*Artist) error {
 }
 
 // UpdateArtist updates an artist in the database
-func (db *DB) UpdateArtist(artist *Artist, keys []string, updateKey, updateValue string) error {
+func (db *DB) UpdateArtist(artist *Artist, keys []string, updateKey string, updateValue any) error {
 	keyMap := map[string]interface{}{
 		"name":      artist.Name,
 		"bio":       artist.Bio,
@@ -132,7 +132,7 @@ func (db *DB) AddAlbums(albums []*Album) error {
 }
 
 // UpdateAlbum updates an album in the database
-func (db *DB) UpdateAlbum(album *Album, keys []string, updateKey, updateValue string) error {
+func (db *DB) UpdateAlbum(album *Album, keys []string, updateKey string, updateValue any) error {
 	keyMap := map[string]interface{}{
 		"name":         album.Name,
 		"release_date": album.ReleaseDate,
@@ -301,7 +301,7 @@ func (db *DB) AddTracks(tracks []*Track) error {
 }
 
 // UpdateTrack updates a track in the database
-func (db *DB) UpdateTrack(track *Track, keys []string, updateKey, updateValue string) error {
+func (db *DB) UpdateTrack(track *Track, keys []string, updateKey string, updateValue any) error {
 	keyMap := map[string]interface{}{
 		"name":        track.Name,
 		"duration":    track.Duration,
@@ -495,7 +495,7 @@ func (db *DB) AddUsers(users []*User) error {
 }
 
 // UpdateUser updates a user in the database
-func (db *DB) UpdateUser(user *User, keys []string, updateKey, updateValue string) error {
+func (db *DB) UpdateUser(user *User, keys []string, updateKey string, updateValue any) error {
 	keyMap := map[string]interface{}{
 		"name": user.Name,
 	}
@@ -596,7 +596,7 @@ func (db *DB) AddListens(listens []*Listen) error {
 }
 
 // UpdateListen updates a listen event in the database
-func (db *DB) UpdateListen(listen *Listen, keys []string, updateKey, updateValue string) error {
+func (db *DB) UpdateListen(listen *Listen, keys []string, updateKey string, updateValue any) error {
 	keyMap := map[string]interface{}{
 		"user_id":     listen.UserID,
 		"track_id":    listen.TrackID,
@@ -685,7 +685,7 @@ func (db *DB) AddTags(tags []*Tag) error {
 }
 
 // UpdateTag updates a tag in the database
-func (db *DB) UpdateTag(tag *Tag, keys []string, updateKey, updateValue string) error {
+func (db *DB) UpdateTag(tag *Tag, keys []string, updateKey string, updateValue any) error {
 	keyMap := map[string]interface{}{
 		"name": tag.Name,
 	}
@@ -792,7 +792,7 @@ func (db *DB) AddPlaylists(playlists []*Playlist) error {
 }
 
 // UpdatePlaylist updates a playlist in the database
-func (db *DB) UpdatePlaylist(playlist *Playlist, keys []string, updateKey, updateValue string) error {
+func (db *DB) UpdatePlaylist(playlist *Playlist, keys []string, updateKey string, updateValue any) error {
 	keyMap := map[string]interface{}{
 		"user_id":     playlist.UserID,
 		"name":        playlist.Name,

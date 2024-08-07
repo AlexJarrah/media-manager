@@ -19,7 +19,7 @@ func Initialize() error {
 	}
 
 	for _, dir := range config.MediaDirectories {
-		if err := db.LoadTracksFromDirectory(dir); err != nil {
+		if err := db.LoadTracksFromDirectory(dir, AddNewTracks); err != nil {
 			return err
 		}
 	}
