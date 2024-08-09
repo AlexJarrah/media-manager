@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // AddArtists adds multiple new artists to the database
@@ -66,19 +64,9 @@ func (db *DB) UpdateArtist(artist *Artist, keys []string, updateKey string, upda
 }
 
 // GetArtists retrieves multiple artists from the database
-func (db *DB) GetArtists(key string, value any) ([]*Artist, error) {
-	var query string
-	var rows *sql.Rows
-	var err error
-
-	if value == "" {
-		query = "SELECT artist_id, name, bio, image_uri FROM artists"
-		rows, err = db.Query(query)
-	} else {
-		query = fmt.Sprintf("SELECT artist_id, name, bio, image_uri FROM artists WHERE %s = ?", key)
-		rows, err = db.Query(query, value)
-	}
-
+func (db *DB) GetArtists(clauses string, args ...any) ([]*Artist, error) {
+	query := "SELECT artist_id, name, bio, image_uri FROM artists " + clauses
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -184,19 +172,9 @@ func (db *DB) UpdateAlbum(album *Album, keys []string, updateKey string, updateV
 }
 
 // GetAlbums retrieves multiple albums from the database
-func (db *DB) GetAlbums(key string, value any) ([]*Album, error) {
-	var query string
-	var rows *sql.Rows
-	var err error
-
-	if value == "" {
-		query = "SELECT album_id, name, release_date, image_uri FROM albums"
-		rows, err = db.Query(query)
-	} else {
-		query = fmt.Sprintf("SELECT album_id, name, release_date, image_uri FROM albums WHERE %s = ?", key)
-		rows, err = db.Query(query, value)
-	}
-
+func (db *DB) GetAlbums(clauses string, args ...any) ([]*Album, error) {
+	query := "SELECT album_id, name, release_date, image_uri FROM albums " + clauses
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -371,30 +349,14 @@ func (db *DB) UpdateTrack(track *Track, keys []string, updateKey string, updateV
 }
 
 // GetTracks retrieves multiple tracks from the database
-func (db *DB) GetTracks(key string, value any) ([]*Track, error) {
-	var query string
-	var rows *sql.Rows
-	var err error
-
-	if value == "" {
-		query = `
-      SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
-      a.album_id, a.name, a.release_date, a.image_uri
-      FROM tracks t
-      JOIN albums a ON t.album_id = a.album_id
-    `
-		rows, err = db.Query(query)
-	} else {
-		query = fmt.Sprintf(`
-      SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
-        a.album_id, a.name, a.release_date, a.image_uri
-      FROM tracks t
-      JOIN albums a ON t.album_id = a.album_id
-      WHERE t.%s = ?
-    `, key)
-		rows, err = db.Query(query, value)
-	}
-
+func (db *DB) GetTracks(clauses string, args ...any) ([]*Track, error) {
+	query := `
+    SELECT t.track_id, t.name, t.duration, t.lyrics, t.is_explicit, t.file_path, t.sha256sum,
+    a.album_id, a.name, a.release_date, a.image_uri
+    FROM tracks t
+    JOIN albums a ON t.album_id = a.album_id
+  ` + clauses
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -529,19 +491,9 @@ func (db *DB) UpdateUser(user *User, keys []string, updateKey string, updateValu
 }
 
 // GetUsers retrieves multiple users from the database
-func (db *DB) GetUsers(key string, value any) ([]*User, error) {
-	var query string
-	var rows *sql.Rows
-	var err error
-
-	if value == "" {
-		query = "SELECT user_id, name, preferences FROM users"
-		rows, err = db.Query(query)
-	} else {
-		query = fmt.Sprintf("SELECT user_id, name, preferences FROM users WHERE %s = ?", key)
-		rows, err = db.Query(query, value)
-	}
-
+func (db *DB) GetUsers(clauses string, args ...any) ([]*User, error) {
+	query := "SELECT user_id, name, preferences FROM users " + clauses
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -624,20 +576,10 @@ func (db *DB) UpdateListen(listen *Listen, keys []string, updateKey string, upda
 	return err
 }
 
-// GetUserListens retrieves all listen events for a user from the database
-func (db *DB) GetUserListens(userId int64, key string, value any) ([]*Listen, error) {
-	var query string
-	var rows *sql.Rows
-	var err error
-
-	if value == "" {
-		query = fmt.Sprintf("SELECT listen_id, user_id, track_id, listen_time, timestamp FROM listens WHERE user_id = %d ORDER BY timestamp DESC", userId)
-		rows, err = db.Query(query)
-	} else {
-		query = fmt.Sprintf("SELECT listen_id, user_id, track_id, listen_time, timestamp FROM listens WHERE user_id = %d AND %s = ? ORDER BY timestamp DESC", userId, key)
-		rows, err = db.Query(query, value)
-	}
-
+// GetUserListens retrieves all listen events for a user from the database.
+func (db *DB) GetListens(clauses string, args ...any) ([]*Listen, error) {
+	query := "SELECT listen_id, user_id, track_id, listen_time, timestamp FROM listens" + clauses
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -711,19 +653,9 @@ func (db *DB) UpdateTag(tag *Tag, keys []string, updateKey string, updateValue a
 }
 
 // GetTags retrieves multiple tags from the database
-func (db *DB) GetTags(key string, value any) ([]*Tag, error) {
-	var query string
-	var rows *sql.Rows
-	var err error
-
-	if value == "" {
-		query = "SELECT tag_id, name FROM tags"
-		rows, err = db.Query(query)
-	} else {
-		query = fmt.Sprintf("SELECT tag_id, name FROM tags WHERE %s = ?", key)
-		rows, err = db.Query(query, value)
-	}
-
+func (db *DB) GetTags(clauses string, args ...any) ([]*Tag, error) {
+	query := "SELECT tag_id, name FROM tags " + clauses
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -872,19 +804,9 @@ func (db *DB) UpdatePlaylist(playlist *Playlist, keys []string, updateKey string
 }
 
 // GetPlaylists retrieves multiple playlists from the database
-func (db *DB) GetPlaylists(key string, value any) ([]*Playlist, error) {
-	var query string
-	var rows *sql.Rows
-	var err error
-
-	if value == "" {
-		query = "SELECT playlist_id, user_id, name, is_favorite FROM playlists"
-		rows, err = db.Query(query)
-	} else {
-		query = fmt.Sprintf("SELECT playlist_id, user_id, name, is_favorite FROM playlists WHERE %s = ?", key)
-		rows, err = db.Query(query, value)
-	}
-
+func (db *DB) GetPlaylists(clauses string, args ...any) ([]*Playlist, error) {
+	query := "SELECT playlist_id, user_id, name, is_favorite FROM playlists " + clauses
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

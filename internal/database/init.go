@@ -24,5 +24,5 @@ func Initialize() error {
 		}
 	}
 
-	return err
+	return nil
 }

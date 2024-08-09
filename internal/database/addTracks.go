@@ -40,7 +40,7 @@ func (db *DB) LoadTracksFromDirectory(dirPath string, mode uint8) error {
 
 	// Do not populate existing hashes for updating modes as no track should be ignored in these modes
 	if mode == AddNewTracks {
-		existingTracks, _ := db.GetTracks("sha256sum", "")
+		existingTracks, _ := db.GetTracks("WHERE sha256sum != ?", "")
 		for _, t := range existingTracks {
 			existingHashes[t.SHA256Sum] = struct{}{}
 		}

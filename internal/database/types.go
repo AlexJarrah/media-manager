@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
+
 	"gitlab.com/AlexJarrah/media-manager/internal/filesystem"
 )
 
